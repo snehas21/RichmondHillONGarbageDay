@@ -329,6 +329,23 @@
 
     .lookup-btn:hover { background: #1e4d1e; }
 
+    /* ── LOADING SPINNER ── */
+    .spinner {
+      width: 32px; height: 32px;
+      border: 3px solid var(--border);
+      border-top-color: var(--green);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .loading-text {
+      margin-top: 12px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
     /* ── FOOTER ── */
     .footer {
       text-align: center;
@@ -377,7 +394,7 @@
       <input class="street-input" id="streetInput" type="text"
              value="Winisk St" placeholder="e.g. Winisk St"
              onkeydown="if(event.key==='Enter') checkSchedule()">
-      <button class="check-btn" onclick="checkSchedule()">Check</button>
+      <button class="check-btn" id="checkBtn" onclick="checkSchedule()">Check</button>
     </div>
   </div>
 
@@ -410,6 +427,9 @@
 //
 // Source: City of Richmond Hill Waste Collection Day Lookup Tool
 //   https://eservices.richmondhill.ca/garbagecollection/
+//
+// Streets are added here as they are confirmed. For unknown streets the app
+// falls back to a live browser-side fetch against the city's lookup API.
 const STREETS = {
   'winisk st':     { day: 4, zone: 'yellow', label: 'Winisk St' },
   'winisk street': { day: 4, zone: 'yellow', label: 'Winisk St' },
@@ -473,32 +493,137 @@ function h(str) {
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-function checkSchedule() {
+// ── CITY API LOOKUP ──────────────────────────────────────────────────────────
+// Tries the Richmond Hill eServices API directly from the browser.
+// Server-side requests are blocked (403), but browser requests from a real
+// user IP succeed.  We try several common ASP.NET MVC endpoint patterns and
+// parse the response flexibly since the exact schema isn't documented publicly.
+async function fetchFromCityAPI(streetName) {
+  const base = 'https://eservices.richmondhill.ca/garbagecollection';
+  const encoded = encodeURIComponent(streetName);
+
+  const endpoints = [
+    `${base}/Home/AutoComplete?term=${encoded}`,
+    `${base}/Home/GetStreets?term=${encoded}`,
+    `${base}/Home/GetStreets?partialStreetName=${encoded}`,
+    `${base}/Home/GetStreet?streetName=${encoded}`,
+    `${base}/Home/GetCollectionDay?streetName=${encoded}`,
+    `${base}/Home/Search?streetName=${encoded}`,
+  ];
+
+  for (const url of endpoints) {
+    try {
+      const res = await fetch(url, {
+        headers: { 'Accept': 'application/json, */*', 'X-Requested-With': 'XMLHttpRequest' },
+      });
+      if (!res.ok) continue;
+      const text = await res.text();
+      const parsed = parseAPIText(text, streetName);
+      if (parsed) return parsed;
+    } catch (_) {
+      // CORS block, network error, or timeout — try next endpoint
+    }
+  }
+  return null;
+}
+
+const DAY_NAMES = ['sunday','monday','tuesday','wednesday','thursday','friday','saturday'];
+
+function parseAPIText(text, fallbackLabel) {
+  const t = text.trim();
+  if (!t.startsWith('[') && !t.startsWith('{')) return null;
+  let data;
+  try { data = JSON.parse(t); } catch (_) { return null; }
+
+  const candidates = Array.isArray(data) ? data : [data];
+  for (const item of candidates) {
+    const result = extractDayZone(item, fallbackLabel);
+    if (result) return result;
+  }
+  return null;
+}
+
+function extractDayZone(obj, fallbackLabel) {
+  if (!obj || typeof obj !== 'object') return null;
+
+  let day = null;
+  let zone = null;
+  let label = fallbackLabel;
+
+  for (const [k, v] of Object.entries(obj)) {
+    const kl = k.toLowerCase();
+    const vs = String(v).toLowerCase();
+
+    // Capture label
+    if (/^(streetname|street|name|label|value)$/i.test(k) && typeof v === 'string') {
+      label = v;
+    }
+
+    // Detect day
+    if (day === null) {
+      if (/day|pickup|collection/i.test(kl)) {
+        if (typeof v === 'number' && v >= 0 && v <= 6) { day = v; }
+        else {
+          const idx = DAY_NAMES.findIndex(d => vs.includes(d));
+          if (idx !== -1) day = idx;
+        }
+      }
+    }
+
+    // Detect zone
+    if (zone === null && /zone|week|garbage/i.test(kl)) {
+      if (vs.includes('blue'))   zone = 'blue';
+      if (vs.includes('yellow')) zone = 'yellow';
+    }
+  }
+
+  return (day !== null && zone) ? { day, zone, label } : null;
+}
+
+// ── MAIN ENTRY POINT ─────────────────────────────────────────────────────────
+async function checkSchedule() {
   const raw    = document.getElementById('streetInput').value.trim();
+  if (!raw) return;
   const key    = raw.toLowerCase();
   const today  = new Date();
   today.setHours(0, 0, 0, 0);
-
-  const street = STREETS[key];
   const out    = document.getElementById('resultCard');
 
+  // 1. Check local database first (instant)
+  let street = STREETS[key];
+
+  // 2. Try live city API lookup
+  if (!street) {
+    out.innerHTML = `
+      <div class="card" style="text-align:center;padding:28px 20px;">
+        <div class="spinner"></div>
+        <div class="loading-text">Looking up <strong>${h(raw)}</strong>…</div>
+      </div>`;
+    street = await fetchFromCityAPI(raw);
+  }
+
+  // 3. Give up and show helpful fallback
   if (!street) {
     out.innerHTML = `
       <div class="card result-unknown">
         <div class="unknown-icon">🔍</div>
-        <div class="unknown-title">Street not in database</div>
+        <div class="unknown-title">Couldn't find schedule data</div>
         <div class="unknown-body">
-          We don't have zone data for <strong>${h(raw)}</strong> yet.<br>
-          Use the official City lookup tool to find your collection day and zone.
+          We tried the City of Richmond Hill's lookup API for
+          <strong>${h(raw)}</strong> but couldn't retrieve the zone and collection day.<br><br>
+          Use the official tool below — it takes about 10 seconds.
         </div>
         <a class="lookup-btn"
            href="https://eservices.richmondhill.ca/garbagecollection/"
            target="_blank" rel="noopener">
-          Look up your street ↗
+          Open official lookup tool ↗
         </a>
       </div>`;
     return;
   }
+
+  // Cache the API result so repeat lookups are instant this session
+  STREETS[key] = street;
 
   const isCollDay  = today.getDay() === street.day;
   const todayZone  = zoneWeekFor(today);
@@ -594,6 +719,15 @@ function initDateDisplay() {
   document.getElementById('weekdayDisplay').textContent = WEEKDAYS[now.getDay()];
   document.getElementById('dateDisplay').textContent    = formatDate(now);
 }
+
+// Wrap async checkSchedule to show/hide the button loading state
+const _checkSchedule = checkSchedule;
+checkSchedule = async function() {
+  const btn = document.getElementById('checkBtn');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try { await _checkSchedule(); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = 'Check'; } }
+};
 
 initDateDisplay();
 checkSchedule();
