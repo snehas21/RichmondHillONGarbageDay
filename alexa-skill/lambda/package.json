@@ -1,0 +1,10 @@
+{
+  "name": "richmond-hill-garbage-day-alexa",
+  "version": "1.0.0",
+  "description": "Alexa skill — Richmond Hill ON garbage day checker",
+  "main": "index.js",
+  "dependencies": {
+    "ask-sdk-core": "^2.14.0",
+    "ask-sdk-model": "^1.89.0"
+  }
+}

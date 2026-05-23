@@ -1,0 +1,63 @@
+{
+  "interactionModel": {
+    "languageModel": {
+      "invocationName": "richmond hill garbage day",
+      "intents": [
+        {
+          "name": "CheckCollectionIntent",
+          "slots": [],
+          "samples": [
+            "is today garbage day",
+            "is it garbage day",
+            "is it garbage day today",
+            "is today a collection day",
+            "is today collection day",
+            "what goes out today",
+            "what bins go out today",
+            "do I put out my garbage today",
+            "should I put out my bins today",
+            "do I need to put out my garbage",
+            "is today recycling day",
+            "do I put out the green bin today",
+            "is the green bin going out today",
+            "is it black bag week",
+            "is this a black bag week",
+            "do the black bags go out this week"
+          ]
+        },
+        {
+          "name": "NextCollectionIntent",
+          "slots": [],
+          "samples": [
+            "when is the next garbage day",
+            "when is garbage day",
+            "when is the next collection day",
+            "when is my next collection",
+            "when is my next pickup",
+            "what day is garbage day",
+            "when do the bins go out next",
+            "when do I put out my garbage next",
+            "when is garbage day this week",
+            "when is the next pickup",
+            "when is the next recycling day"
+          ]
+        },
+        {
+          "name": "AMAZON.HelpIntent"
+        },
+        {
+          "name": "AMAZON.CancelIntent"
+        },
+        {
+          "name": "AMAZON.StopIntent"
+        },
+        {
+          "name": "AMAZON.NavigateHomeIntent"
+        },
+        {
+          "name": "AMAZON.FallbackIntent"
+        }
+      ]
+    }
+  }
+}
